@@ -1,6 +1,8 @@
 #include "HepMCToEDMConverter.h"
 // HepMC
 #include "HepMC3/GenVertex.h"
+// std
+#include <map>
 // HepPDT
 #include "HepPDT/ParticleID.hh"
 // EDM4hep
@@ -33,14 +35,24 @@ HepMCToEDMConverter::convert(std::shared_ptr<const HepMC3::GenParticle> hepmcPar
 #endif
 
   // convert vertex info
+  // pos.t() is c*t in HepMC length units (mm); divide by c_light [mm/ns] to get time in ns
+  static constexpr double c_light_mm_ns = 299.792458;
+
   auto prodVtx = hepmcParticle->production_vertex();
+  auto endVtx  = hepmcParticle->end_vertex();
 
   if (prodVtx != nullptr) {
     auto& pos = prodVtx->position();
     edm_particle.setVertex({pos.x(), pos.y(), pos.z()});
+    double t = pos.t() / c_light_mm_ns;
+    // Beam particles have a production vertex at the origin (t=0); use end vertex
+    // time instead so that the interaction time is correctly propagated to Geant4
+    if (t == 0.0 && endVtx != nullptr) {
+      t = endVtx->position().t() / c_light_mm_ns;
+    }
+    edm_particle.setTime(t);
   }
 
-  auto endVtx = hepmcParticle->end_vertex();
   if (endVtx != nullptr) {
     auto& pos = endVtx->position();
     edm_particle.setEndpoint({pos.x(), pos.y(), pos.z()});
@@ -55,13 +67,14 @@ HepMCToEDMConverter::HepMCToEDMConverter(const std::string& name, ISvcLocator* s
   declareProperty("GenParticles", m_genphandle, "Generated particles collection (output)");
 }
 
-StatusCode HepMCToEDMConverter::initialize() { return Gaudi::Algorithm::initialize(); }
-
 StatusCode HepMCToEDMConverter::execute(const EventContext&) const {
   const HepMC3::GenEvent* evt = m_hepmchandle.get();
   edm4hep::MCParticleCollection* particles = new edm4hep::MCParticleCollection();
 
-  std::unordered_map<unsigned int, edm4hep::MutableMCParticle> _map;
+  // Use ordered map so particles are pushed to the collection in HepMC3 ID order,
+  // matching the sequential ID assignment in HepMC3EventReader and preserving
+  // Geant4 primary track stack ordering (LIFO) across both input formats.
+  std::map<unsigned int, edm4hep::MutableMCParticle> _map;
   for (auto _p : evt->particles()) {
     verbose() << "Converting HepMC particle with PDG ID \"" << _p->pdg_id() << "\" and ID \"" << _p->id() << "\""
               << endmsg;
