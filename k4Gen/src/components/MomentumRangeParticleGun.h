@@ -49,7 +49,7 @@ private:
   /// Maximum theta angle (Set by options)
   Gaudi::Property<double> m_maxTheta{this, "ThetaMax", 0.4 * Gaudi::Units::rad, "Maximal theta"};
   /// Maximum phi angle (Set by options)
-  Gaudi::Property<double> m_maxPhi{this, "PhiMax", Gaudi::Units::twopi* Gaudi::Units::rad, "Maximal phi"};
+  Gaudi::Property<double> m_maxPhi{this, "PhiMax", Gaudi::Units::twopi * Gaudi::Units::rad, "Maximal phi"};
 
   /// Momentum range
   double m_deltaMom;
