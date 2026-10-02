@@ -2,7 +2,7 @@
 // HepMC
 #include "HepMC3/GenVertex.h"
 // std
-#include <map>
+#include <unordered_map>
 // HepPDT
 #include "HepPDT/ParticleID.hh"
 // EDM4hep
@@ -44,12 +44,9 @@ HepMCToEDMConverter::convert(std::shared_ptr<const HepMC3::GenParticle> hepmcPar
   if (prodVtx != nullptr) {
     auto& pos = prodVtx->position();
     edm_particle.setVertex({pos.x(), pos.y(), pos.z()});
-    double t = pos.t() / c_light_mm_ns;
-    // Beam particles have a production vertex at the origin (t=0); use end vertex
-    // time instead so that the interaction time is correctly propagated to Geant4
-    if (t == 0.0 && endVtx != nullptr) {
-      t = endVtx->position().t() / c_light_mm_ns;
-    }
+    // Beam particles have prodVtx at the origin (t=0); use end vertex time so the
+    // interaction time is correctly propagated to Geant4.
+    const double t = (pos.t() == 0.0 && endVtx != nullptr ? endVtx->position().t() : pos.t()) / c_light_mm_ns;
     edm_particle.setTime(t);
   }
 
@@ -71,10 +68,10 @@ StatusCode HepMCToEDMConverter::execute(const EventContext&) const {
   const HepMC3::GenEvent* evt = m_hepmchandle.get();
   edm4hep::MCParticleCollection* particles = new edm4hep::MCParticleCollection();
 
-  // Use ordered map so particles are pushed to the collection in HepMC3 ID order,
-  // matching the sequential ID assignment in HepMC3EventReader and preserving
-  // Geant4 primary track stack ordering (LIFO) across both input formats.
-  std::map<unsigned int, edm4hep::MutableMCParticle> _map;
+  // unordered_map for O(1) lookups; ordering is recovered in the flush loop below
+  // by re-iterating evt->particles(), which HepMC3 guarantees is in sequential ID order.
+  std::unordered_map<unsigned int, edm4hep::MutableMCParticle> _map;
+  _map.reserve(evt->particles().size());
   for (auto _p : evt->particles()) {
     verbose() << "Converting HepMC particle with PDG ID \"" << _p->pdg_id() << "\" and ID \"" << _p->id() << "\""
               << endmsg;
@@ -104,8 +101,9 @@ StatusCode HepMCToEDMConverter::execute(const EventContext&) const {
       }
     }
   }
-  for (auto particle_pair : _map) {
-    particles->push_back(particle_pair.second);
+  // Flush in HepMC3 ID order: evt->particles() is already in sequential ID order.
+  for (auto _p : evt->particles()) {
+    particles->push_back(_map[_p->id()]);
   }
   m_genphandle.put(particles);
   return StatusCode::SUCCESS;
