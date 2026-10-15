@@ -44,10 +44,7 @@ HepMCToEDMConverter::convert(std::shared_ptr<const HepMC3::GenParticle> hepmcPar
   if (prodVtx != nullptr) {
     auto& pos = prodVtx->position();
     edm_particle.setVertex({pos.x(), pos.y(), pos.z()});
-    // Beam particles have prodVtx at the origin (t=0); use end vertex time so the
-    // interaction time is correctly propagated to Geant4.
-    const double t = (pos.t() == 0.0 && endVtx != nullptr ? endVtx->position().t() : pos.t()) / c_light_mm_ns;
-    edm_particle.setTime(t);
+    edm_particle.setTime(pos.t() / c_light_mm_ns);
   }
 
   if (endVtx != nullptr) {
